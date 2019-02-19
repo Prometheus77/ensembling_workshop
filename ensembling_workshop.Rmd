@@ -170,14 +170,14 @@ german %>%
 Very rarely will a dataset come with the optimal set of features for predictive performance. Most datasets contain some features which should be removed prior to training a model. Some examples, in rough order of worst to least bad, are:
 
 * Zero-information features
-  * A feature in which every row is the same value (e.g. Gender in an all-male school)
-  * A non-numeric feature in which every row is a different value (e.g. license plate number)
+    + A feature in which every row is the same value (e.g. Gender in an all-male school)
+    + A non-numeric feature in which every row is a different value (e.g. license plate number)
 * Redundant features
-  * A feature which is an exact duplicate of another feature
-  * A numeric feature which is perfectly (or nearly perfectly) correlated with another numeric feature, e.g. weight in lbs and weight in kg
-  * A non-numeric feature which is perfectly (or nearly perfectly) correlated with another non-numeric feature, e.g. PO Box number and ZIP code extension
-* Non-predictive features: features which do not contain any information that helps predict the outcome
-* Noisy features: features which may be predictive but contain so much noise that they reduce model accuracy when included in conjunction with better features
+    + A feature which is an exact duplicate of another feature
+    + A numeric feature which is perfectly (or nearly perfectly) correlated with another numeric feature, e.g. weight in lbs and weight in kg
+    + A non-numeric feature which is perfectly (or nearly perfectly) correlated with another non-numeric feature, e.g. PO Box number and ZIP code extension
+    + Non-predictive features: features which do not contain any information that helps predict the outcome
+    + Noisy features: features which may be predictive but contain so much noise that they reduce model accuracy when included in conjunction with better features
 
 The first two feature types are very easy to identify and eliminate, and should be part of your data preprocessing step. Below, we will look at a correlation matrix for each of the features.
 
@@ -212,13 +212,13 @@ Based on the above, the strongest correlation between two features appears to be
 
 The next step in the process is to start actually building models of the data to see what kind of predictive accuracy we can attain. One of the first decisions you will need to make is what you want to measure in terms of model accuracy. For a binary classification problem like the current one, there are literally dozens of ways to measure model performance. We are going to use four different measures:
 
-* Area under the curve: This is probably the best general-purpose measure for a binary classification problem where you are able to predict a probability. The calculation is a bit complex, but conceptually what's happening is it's sorting your dataset in order of highest predicted probability to lowest predicted probability. It then creates a plot which starts at the lower left point (0, 0), and moves upward each time it encounters a "true" positive, and rightward each time it encounters a true negative. The distance it moves at each step is such that it will always get to (1, 1) at the end of the data set. Then the area under this curve is integrated to a number between 0 and 1. The beauty of this method is that it the proportion of positives and negatives in the data set, as well as any prediction threshold, are irrelevant, it allows an "apples to apples" comparison of any data set with any other.
+* **Area under the curve:** This is probably the best general-purpose measure for a binary classification problem where you are able to predict a probability. The calculation is a bit complex, but conceptually what's happening is it's sorting your dataset in order of highest predicted probability to lowest predicted probability. It then creates a plot which starts at the lower left point (0, 0), and moves upward each time it encounters a "true" positive, and rightward each time it encounters a true negative. The distance it moves at each step is such that it will always get to (1, 1) at the end of the data set. Then the area under this curve is integrated to a number between 0 and 1. The beauty of this method is that it the proportion of positives and negatives in the data set, as well as any prediction threshold, are irrelevant, it allows an "apples to apples" comparison of any data set with any other. For more, see: https://blog.revolutionanalytics.com/2016/11/calculating-auc.html
 
-* Logarithmic loss: Also called log loss and cross-entropy, this takes the average of the logarithms of the distance between each probability prediction and the truth (either 0% or 100%) of that case.
+* **Logarithmic loss:** Also called "log loss" and "cross-entropy", this takes the average of the logarithms of the distance between each probability prediction and the truth (either 0% or 100%) of that case. For more, see: https://towardsdatascience.com/understanding-binary-cross-entropy-log-loss-a-visual-explanation-a3ac6025181a
 
-* F1 score: This is a balanced metric that blends precision (percent of positive predictions that are correct) and recall (percent of items that should have been positive that were predicted to be positive).
+* **F1 score:** This is a balanced metric that blends precision (percent of positive predictions that are correct) and recall (percent of items that should have been positive that were predicted to be positive). For more, see: https://en.wikipedia.org/wiki/F1_score
 
-* Accuracy: This metric is simply the percent of predictions that were correct, given a certain threshold for prediction. It is easy to understand but supplies less information than the alternatives discussed here.
+* **Accuracy:** This metric is simply the percent of predictions that were correct, given a certain threshold for prediction. It is easy to understand but supplies less information than the alternatives discussed here.
 
 ```{r measures}
 my_measures <- list(auc, logloss, f1, acc)
@@ -237,21 +237,21 @@ as.data.frame(listLearners("classif", quiet = TRUE, warn.missing.packages = FALS
 
 As you can see, the list is quite extensive and it would take a *very long time* to include all of them. We will choose a few general-purpose learners and see how they compare. Specifically:
 
-* *Logistic regression*: The classical statistical approach based on determining the coefficient for each feature and an intercept that minimizes the error of prediction across all observations.
+* **Logistic regression:** The classical statistical approach based on determining the coefficient for each feature and an intercept that minimizes the error of prediction across all observations.
 
-* *Lasso*: A special case of logistic regression which applies a penalty (called an L1 penalty) to the model based on how many features are used. Generally results in better generalization performance and uses fewer features than basic logistic regression.
+* **Lasso:** A special case of logistic regression which applies a penalty (called an L1 penalty) to the model based on how many features are used. Generally results in better generalization performance and uses fewer features than basic logistic regression.
 
-* *Ridge*: A special case of logistic regression which applies a penalty (called an L2 penalty) to the model based on the size of coefficients used. Does not eliminate any features as in the lasso, but shrinks the coefficients of less predictive variables so they are less noisy.
+* **Ridge:** A special case of logistic regression which applies a penalty (called an L2 penalty) to the model based on the size of coefficients used. Does not eliminate any features as in the lasso, but shrinks the coefficients of less predictive variables so they are less noisy.
 
-* *Elastic net*: A blend of the lasso and ridge approaches, applies a penalty which consists of a blend of L1 and L2 penalties, with the specific blending proportion as a tunable parameter. With a little tuning, generally outperforms both lasso and ridge.
+* **Elastic net:** A blend of the lasso and ridge approaches, applies a penalty which consists of a blend of L1 and L2 penalties, with the specific blending proportion as a tunable parameter. With a little tuning, generally outperforms both lasso and ridge. For an explanation of the differences between lasso, ridge, and elastic net, see here: https://www.datacamp.com/community/tutorials/tutorial-ridge-lasso-elastic-net
 
-* *Decision tree*: A non-linear statistical approach which considers all features and looks for the feature and split point which maximizes the difference between the probabilities of the target variables in each subset. It then repeats this process within each split to create a "tree" which learns to predict the outcome. Useful for nonlinear data, but extremely prone to overfitting.
+* **Decision tree:** A non-linear statistical approach which considers all features and looks for the feature and split point which maximizes the difference between the probabilities of the target variables in each subset. It then repeats this process within each split to create a "tree" which learns to predict the outcome. Useful for nonlinear data, but extremely prone to overfitting.
 
-* *Random forest*: Creates many decision trees, each using only a subset of available features and observations, and then uses the average of the predictions of each tree to determine the outcome. Generalizes significantly better than decision trees with less overfitting.
+* **Random forest:** Creates many decision trees, each using only a subset of available features and observations, and then uses the average of the predictions of each tree to determine the outcome. Generalizes significantly better than decision trees with less overfitting.
 
-* *XGBoost*: A popular implementation of gradient boosting. This is similar to a random forest in that it creates multiple decision trees, but instead of creating them independently, each decision tree tries to correct the error from the decision tree before it. Generally gets state-of-the art performance for traditional data sets.
+* **XGBoost:** A popular implementation of gradient boosting. This is similar to a random forest in that it creates multiple decision trees, but instead of creating them independently, each decision tree tries to correct the error from the decision tree before it. Generally gets state-of-the art performance for traditional data sets.
 
-* *Deep neural net*: Creates a multilayer nerual net which learns weights between inputs, hidden layers, and an output layer that reduce error over time. Neural nets have produced some of the most exciting advances in machine learning and AI in specialized applications such as image recognition, voice recognition, translation, etc. However, for traditional statistical problems they are often outclassed by tree-based models such as Random Forests and gradient boosting.
+* **Deep neural net:** Creates a multilayer nerual net which learns weights between inputs, hidden layers, and an output layer that reduce error over time. Neural nets have produced some of the most exciting advances in machine learning and AI in specialized applications such as image recognition, voice recognition, translation, etc. However, for traditional statistical problems they are often outclassed by tree-based models such as Random Forests and gradient boosting.
 
 We are going to create a learner for each of these algorithms using mlr's `makeLearner()` function. Since some of these algorithms cannot handle factor variables, we are going to apply `makeDummyFeaturesWrapper()` which will one-hot encode any data before passing it to the algorithm. Finally, we will add a `makePreprocWrapperCaret()` to all of the learners which will center and scale the data so that the mean is zero and the value is divided by the standard deviation for each feature.
 
@@ -299,7 +299,7 @@ lrns <- map2(.x = lrns,
 
 ```
 
-
+Now we will evaluate the performance of each of these learners using 10-fold cross-validation and plot the resulting performance in terms of our error measures.
 
 ```{r baseline_performance}
 baseline_result <- try_load("RDS_files/baseline_result.RDS", save = TRUE, { 
@@ -308,6 +308,24 @@ baseline_result <- try_load("RDS_files/baseline_result.RDS", save = TRUE, {
 
 map(my_measures, ~ plotBMRBoxplots(baseline_result, measure = .x, pretty.names = FALSE))
 ```
+
+From the above, it seems clear that the random forest and support vector machine are the best performers, and the deep neural net is the worst. All logistic regression techniques performed similarly, but the elasticnet did slightly better than the others.
+
+## Tuning hyperparameters
+
+All of our algorithms except logistic regression have hyperparameters, or settings, that can be tweaked to improve performance. For example:
+
+* **Random forest** allows you to choose how many trees to build, how many features to try at each split, and how many observations to allow in the the final node
+
+* **Ridge** allows you to set a complexity parameter
+
+* **Lasso** allow you to set a cost function and a penalty weight
+
+* **Elastic net** allows you to set a cost function as well as the weighting between the L1 (lasso) and L2 (ridge) penalty to apply
+
+* **Deep neural net** allows you to choose a structure, a learning rate, a gradient descent optimizer, an activation function, and several other choices
+
+Let's see if we can improve performance of our lasso by tuning the cost and the penalty weight and cost functions. We will use a grid search, where we will define discrete points for each variable and evaluate performance within each combination of weights.
 
 ```{r tuning_grid}
 getParamSet("classif.LiblineaRL1LogReg")
@@ -341,6 +359,10 @@ all_results <- mergeBenchmarkResults(list(baseline_result, bmr))
 plotBMRBoxplots(all_results, pretty.names = FALSE)
 ```
 
+It looks like the tuned lasso ended up with slightly better performance than the default lasso. You can see that performance is better with a lower epsilon and a higher cost.
+
+However, lasso is a simple case with only two variables to tune. In some cases, such as xgboost, you have more variables than is practical to build a grid search for. Put another way, if you want to test seven points per variable as above, you need to rebuild the model 7^(number of variables) times. Since xgboost has seven parameters, 7^7 = 823,543 combinations, which would take a prohibitively long time. In that case, we have to try more efficient hyperparameter optimizers. We will start with the simplest, random search:
+
 ```{r tuning_random}
 getParamSet("classif.xgboost")
 
@@ -373,6 +395,8 @@ all_results <- mergeBenchmarkResults(list(all_results, bmr))
 plotBMRBoxplots(all_results, pretty.names = FALSE)
 ```
 
+Random search yielded significant performance improvement over the default, but only because the default xgboost parameters in mlr are junk. Here is a graph showing which parameters were explore, and which optimum was chosen.
+
 ```{r plot_tune_result}
 plot_pd <- function(var, tune_result) {
   tune_result$opt.path$env$path %>%
@@ -386,6 +410,8 @@ plot_pd <- function(var, tune_result) {
 
 map(names(params.xgboost$pars), ~ plot_pd(.x, tr_xgb_rand))
 ```
+
+If you look at the plots below, it's hard not to think that random search overfit on some of the hyperparameters, meaning it took the point that happened to be the highest due to randomness, not the one that would be expected to yield the best results over a large number of trials. Another optimization approach that solves this problem is model-based optimization. It starts out doing a random search, but then learns the shape of the hyperparameter space over time and iteratively searches for better and better answers. It is both more efficient than random search, and is less likely to result in overfitting.
 
 ```{r tuning_mbo}
 mboc <- makeMBOControl(final.method = "best.predicted")
@@ -409,9 +435,21 @@ all_results <- mergeBenchmarkResults(list(all_results, bmr))
 plotBMRBoxplots(all_results, pretty.names = FALSE)
 ```
 
+In this case, we got a better result from model based optimization vs. random search in half the time. Looking at the hyperparameter plots below, it also seems like we did a better job avoiding overfitting.
+
 ```{r mbo_plot}
 map(names(params.xgboost$pars), ~ plot_pd(.x, tr_xgb_mbo))
 ```
+
+## Feature selection part 2
+
+Once we have a reasonably well-tuned model, it is time to revisit which features should make it into the model. This time, instead of looking for junk features with no useful information, we are looking to remove noisy features that may contain information but end up confusing the model. The only way we can determine these features is to rebuild the model with and without them and see if performance improves. We will try three techniques:
+
+* **Random search:** Try random subsets of features and choose the one with the best results
+
+* **Backward selection:** Start with every possible feature, then iteratively remove one feature at a time and choose the subset that performs best. Continue iterating until you run out of budget or you get no further improvement beyond a set threshold.
+
+* **Genetic algorithm:** Start with random subsets, then take the best of each generation and use it as the basis for further randomization. The model should improve more consistently than random search and converge more quickly than backward selection.
 
 ```{r select_features}
 feature_set <- list()
@@ -443,6 +481,8 @@ plot_feature_selection <- function(fs) {
 map(feature_set, plot_feature_selection)
 ```
 
+This makes it look like the genetic algorithm was clearly the winner. However, it may have ended up overfitting on the features involved. To make sure, let's compare an xgboost with all features versus the winners of each of our feature selection algorithms.
+
 ```{r compare_featsel_performance}
 setTaskId <- function(task, id) {
   task$task.desc$id <- id
@@ -472,6 +512,22 @@ fs_bmr <- try_load("RDS_files/fs_bmr.RDS", save = TRUE, {
 plotBMRBoxplots(fs_bmr, pretty.names = FALSE) +
   facet_grid(~task.id)
 ```
+
+As you can see, in this case, there does appear to be a slight improvement in the genetic algorithm vs. the baseline, but not enough to be certain. In other problem sets, you may see significant improvement. For the remaining steps, we are going to keep all our features.
+
+## Putting it together
+
+Now that we have learned to build and tune models, we will create an ensemble of models by combining all the models we have built so far. The question that goes next is, how do we combine the scores? We will try a few different approaches and see which works best on this data set:
+
+* **Hill climb:** Use greedy forward selection to add a weight of 1 to the model that improves performance the most until performance stops improving
+
+* **Average:** Take the simple average of all model scores.
+
+* **Stacking:** Take the in-sample predictions of all models and build a logistic regression on top of the results.
+
+* **Stacking with cross-validation:** Take the cross-validated (out-of-sample) predictions of all models and build a logistic regression on top of the results.
+
+We will try stacking with both basic logistic regression (give a weight to all models) and lasso regression (narrow down to a subset of models).
 
 ```{r build_ensemble}
 ensemble1 <- makeStackedLearner(base.learners = lrns,
@@ -530,6 +586,12 @@ tvp <- generateThreshVsPerfData(final_result, list(fpr, tpr))
 plotROCCurves(tvp, list(fpr, tpr), facet.learner = TRUE)
 ```
 
+You can see that our ensembles mostly performed better than the best single model, but that the stacked lasso with cross validation arguably performed the best. We can also look at the ROC curves to determine whether the model performs best at the low end (successfully avoiding calling good loans bad) or the high end (successfully calling good loans good).
+
+## Training the final model
+
+Once you have evaluated a variety of model strategies and chosen the best one, you will want to re-train your model on all available data. Thus far, we have cross-validated everything because we want to estimate how the model will perform in the real world. However, for your final model, you want to use *all* the available training data to get it as accurate as possible.
+
 ```{r train_final_model}
 final_model <- train(ensemble6, task)
 
@@ -570,3 +632,23 @@ pdd2$data %>%
   geom_tile(aes(fill = Good)) +
   scale_fill_gradient2(low = "red", mid = "gray", high = "forest green", midpoint = 0.6)
 ```
+
+Looking at these results, we can build partial dependence plots to understand what's going on under the hood of our ensemble. In general, the model likes people who:
+
+* Are older
+
+* Are borrowing less money
+
+* Are borrowing for less time
+
+* Have fewer existing credits at the bank
+
+* Have a lower payment-to-income ratio
+
+You can look through and see the other impacts of the model as well. Finally, you can even look at two variables in conjunction with each other, as in the amount borrowed joinly compared with the duration of the loan. These types of insights can give you useful information about whether or not your model will work in the real world. If it is making predictions that make no intuitive sense, it could be overfitting on the data.
+
+# Closing thoughts
+
+Predictive modeling is both an art and a science. Building an effective predictive model requires a significant amount of experimentation and effort, but also requires understanding some of the underlying strengths and weaknesses of various techniques for input preprocessing, feature selection, algorithm tuning, and evaluating accuracy. It is the author's hope that this workshop has provided a valuable introduction and a useful toolkit to allow an aspiring data scientist to more effectively create predictive models in the future.
+
+Aaron Cooley
