@@ -1,0 +1,572 @@
+---
+title: "Ensembling workshop"
+author: "Aaron Cooley"
+date: "2/11/2019"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(1)
+```
+
+# Setting up
+
+Before beginning the process, we will need to install a number of libraries and packages. I highly recommend blocking about an hour and un-commenting the next code chunk (remove the number sign '#' on each line) and then running it. This will install several hundred packages which allow mlr to do everything it needs to do.
+
+```{r install_libraries, echo=FALSE}
+# install.packages("devtools")
+# install.packages("mlr", dependencies = TRUE, suggests = TRUE)
+# install.packages("mlrMBO", dependencies = TRUE)
+# install.packages("tidyverse", dependencies = TRUE)
+# devtools::install_github("Prometheus77/ucimlr")
+# devtools::install_github("Prometheus77/actools")
+```
+
+Below are the libraries we ard going to need loaded for this tutorial. Having a library loaded means that its functions can be accessed directly inside your code.
+
+```{r load_libraries}
+library(ucimlr)
+library(actools)
+library(mlr)
+library(mlrMBO)
+library(tidyverse)
+```
+
+# Reading data
+
+We are going to load in a data set from a German bank which contains data on 1,000 loans, including data that was available at time of application that will serve as predictor variables, and the performance of that loan (whether or not it was paid back) which will serve as the target variable. Details on the data are available at:
+
+https://archive.ics.uci.edu/ml/datasets/statlog+(german+credit+data)
+
+We will then summarize each column (variable) to get a basic understanding of the distributions of the data.
+
+```{r read_data}
+german <- read_ucimlr("german")
+summarizeColumns(german)
+```
+
+You will notice that some columns show as type 'factor' and others as type 'numeric'. Factor variables contain categorial information (e.g. sex, own vs. rent, etc.), whereas numeric variables are measured with a number (e.g. height, weight or age). All learning algorithms can handle numeric variables, but not all can handle factor variables without some preprocessing.
+
+The column summary handles factor and numeric variables differently. Summary statistics for numeric variables include mean, dispersion (standard deviation), median, mean absolute deviation (MAD, a metric similar to standard deviation), the minimum value, and the maximum value. Summary statistics for factor variables include dispersion (variation ratio, or the percentage of observations not equal to the mode), the number of observations in the least common category, the number of observations in the most common category, and the total number of categories.
+
+The original data set uses codes for the factors that don't make any sense. We are going to recode the factors so that they are human readable and make more sense. We will use the information supplied on the website where we pulled the original data set. Then we will plot the distributions of each variable so that we can start to understand our data set.
+
+```{r recode_factors}
+german <- german %>%
+  mutate(Status_existing_chkg_acct = recode(Status_existing_chkg_acct,
+                                            A11 = '<0',
+                                            A12 = '0-<200',
+                                            A13 = '200+',
+                                            A14 = 'no checking account'),
+         Credit_history = recode(Credit_history,
+                                 A30 = 'No remaining balance at any bank',
+                                 A31 = 'No remaining balance at this bank',
+                                 A32 = 'No prior delinquency',
+                                 A33 = 'Prior delinquency',
+                                 A34 = 'Remaining balance at another bank'),
+         Purpose = recode(Purpose,
+                          A40 = 'Car (new)',
+                          A41 = 'Car (used)',
+                          A42 = 'Furniture/equipment',
+                          A43 = 'Radio/television',
+                          A44 = 'Domestic appliances',
+                          A45 = 'Repairs',
+                          A46 = 'Education',
+                          A47 = 'Vacation',
+                          A48 = 'Retraining',
+                          A49 = 'Business',
+                          A410 = 'Other'),
+         Savings_acct = recode(Savings_acct,
+                               A61 = '<100',
+                               A62 = '100-<500',
+                               A63 = '500-<1000',
+                               A64 = '1000+',
+                               A65 = 'unknown/none'),
+         Present_employment_since = recode(Present_employment_since,
+                                           A71 = 'Unemployed',
+                                           A72 = '<1 year',
+                                           A73 = '1-<4 years',
+                                           A74 = '4-<7 years',
+                                           A75 = '7+ years'),
+         Marital_status = recode(Marital_status,
+                                 A91 = 'Male - Divorced/Separated',
+                                 A92 = 'Female - Divorced/Separated/Married',
+                                 A93 = 'Male - Single',
+                                 A94 = 'Male - Married/Widowed',
+                                 A95 = 'Female - Single'),
+         Other_applicants = recode(Other_applicants,
+                                   A101 = 'none',
+                                   A102 = 'co-applicant',
+                                   A103 = 'guarantor'),
+         Property = recode(Property,
+                           A121 = 'real estate',
+                           A122 = 'savings or life insurance',
+                           A123 = 'car or other',
+                           A124 = 'unknown or none'),
+         Other_installment_plans = recode(Other_installment_plans,
+                                          A141 = 'bank',
+                                          A142 = 'stores',
+                                          A143 = 'none'),
+         Housing = recode(Housing,
+                          A151 = 'rent',
+                          A152 = 'own',
+                          A153 = 'for free'),
+         Job = recode(Job,
+                      A171 = 'unemployed/unskilled/non-resident',
+                      A172 = 'unskilled - resident',
+                      A173 = 'skilled/official',
+                      A174 = 'management/self-employed/highly qualified'),
+         Telephone = recode(Telephone,
+                            A191 = 'none',
+                            A192 = 'yes'),
+         Foreign_worker = recode(Foreign_worker,
+                                 A201 = 'yes',
+                                 A202 = 'no'),
+         Performance = recode_factor(Performance,
+                                     `1` = 'Good',
+                                     `2` = 'Bad'))
+
+factor_features <- names(german)[sapply(german, is.factor)]
+map(factor_features, ~ ggplot(german, aes_string(x = .x)) + geom_histogram(stat = 'count') +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1)))
+
+numeric_features <- names(german)[!sapply(german, is.factor)]
+map(numeric_features, ~ ggplot(german, aes_string(x = .x)) + geom_histogram())
+```
+
+In order to set up a machine learning problem in mlr, you will need to create a task. At minimum, a task consists of the following information:
+
+* Data set to be used in prediction
+* Name of the target variable
+* Type of prediction to be done (i.e. classification, regression, etc.)
+
+Since we are doing classification, predicting whether a loan will fall into the "paid back" or "not paid back" category, we will create a classification task using `makeClassifTask()`. We also need to make sure the Performance variable is a factor, which we did in the previous step.
+
+```{r make_task}
+task <- makeClassifTask(data = german, target = "Performance")
+print(task)
+```
+
+Once you create a task, you can `print()` it to see a quick summary of the task information. In this case, we are told that we are performing classification of the 'Performance' variable, that we have 7 numeric and 13 factor variables as predictors, that our target variable has two classes, 1 and 2 respectively, and that there are 700 observations in class 1 (the "positive class") vs. 300 in class 2. A classification task is going to return either a binary prediction of 0 or 1, or a probability prediction between 0 and 1. In either case, a prediction of 1 refers to the positive class ("paid back"), and a prediction of 0 referse to the negative class ("not paid back"). So, for example, a probability predction of 0.7 roughly corresponds to a 70% chance of the loan being paid back.
+
+# Feature transformation
+
+Not every learning algorithm can handle factor variables. For example, a logistic regression requires each predictor variable to be assigned a coefficient that it can be multiplied with. It's easy to assign a coefficient to 'Age_years' of 30 or 'Duration_months' of 5. It's not possible to assign a coefficient to 'Purpose' of "Education". The way that this is normally handled is what's called "one hot encoding", which simply means creating a numeric variable for every possible category and assigning it either a 1 or a 0. So in this case, 'Purpose' is split into one column for each possible category, e.g. "Purpose.Repairs", "Purpose.Education", etc., and each column either receives a 1 or a 0.
+
+```{r transform_features}
+german %>%
+  normalizeFeatures() %>%
+  head()
+
+german %>%
+  normalizeFeatures() %>%
+  createDummyFeatures() %>%
+  head()
+```
+
+# Removing useless features
+
+Very rarely will a dataset come with the optimal set of features for predictive performance. Most datasets contain some features which should be removed prior to training a model. Some examples, in rough order of worst to least bad, are:
+
+* Zero-information features
+  * A feature in which every row is the same value (e.g. Gender in an all-male school)
+  * A non-numeric feature in which every row is a different value (e.g. license plate number)
+* Redundant features
+  * A feature which is an exact duplicate of another feature
+  * A numeric feature which is perfectly (or nearly perfectly) correlated with another numeric feature, e.g. weight in lbs and weight in kg
+  * A non-numeric feature which is perfectly (or nearly perfectly) correlated with another non-numeric feature, e.g. PO Box number and ZIP code extension
+* Non-predictive features: features which do not contain any information that helps predict the outcome
+* Noisy features: features which may be predictive but contain so much noise that they reduce model accuracy when included in conjunction with better features
+
+The first two feature types are very easy to identify and eliminate, and should be part of your data preprocessing step. Below, we will look at a correlation matrix for each of the features.
+
+```{r trash_features}
+cor(german[, sapply(german, is.numeric)]) %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "x") %>%
+  gather(y, correlation_coeff, -x) %>%
+  ggplot(aes(x = x, y = y)) +
+  geom_raster(aes(fill = correlation_coeff)) +
+  geom_text(aes(label = round(correlation_coeff, 2))) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_gradient2(low = "red", mid = "white", high = "blue")
+
+cor(map_df(german[, !sapply(german, is.numeric)], as.numeric)) %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "x") %>%
+  gather(y, correlation_coeff, -x) %>%
+  ggplot(aes(x = x, y = y)) +
+  geom_raster(aes(fill = correlation_coeff)) +
+  geom_text(aes(label = round(correlation_coeff, 2)), size = 2) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_gradient2(low = "red", mid = "white", high = "blue")
+
+```
+
+Based on the above, the strongest correlation between two features appears to be between Credit_amount and Duration_months at 0.62. This correlation makes sense, but it is clear that these features are describing very different characteristics of the loan, so it is probably wise to retain both.
+
+# Modeling the data
+
+## Error measures
+
+The next step in the process is to start actually building models of the data to see what kind of predictive accuracy we can attain. One of the first decisions you will need to make is what you want to measure in terms of model accuracy. For a binary classification problem like the current one, there are literally dozens of ways to measure model performance. We are going to use four different measures:
+
+* Area under the curve: This is probably the best general-purpose measure for a binary classification problem where you are able to predict a probability. The calculation is a bit complex, but conceptually what's happening is it's sorting your dataset in order of highest predicted probability to lowest predicted probability. It then creates a plot which starts at the lower left point (0, 0), and moves upward each time it encounters a "true" positive, and rightward each time it encounters a true negative. The distance it moves at each step is such that it will always get to (1, 1) at the end of the data set. Then the area under this curve is integrated to a number between 0 and 1. The beauty of this method is that it the proportion of positives and negatives in the data set, as well as any prediction threshold, are irrelevant, it allows an "apples to apples" comparison of any data set with any other.
+
+* Logarithmic loss: Also called log loss and cross-entropy, this takes the average of the logarithms of the distance between each probability prediction and the truth (either 0% or 100%) of that case.
+
+* F1 score: This is a balanced metric that blends precision (percent of positive predictions that are correct) and recall (percent of items that should have been positive that were predicted to be positive).
+
+* Accuracy: This metric is simply the percent of predictions that were correct, given a certain threshold for prediction. It is easy to understand but supplies less information than the alternatives discussed here.
+
+```{r measures}
+my_measures <- list(auc, logloss, f1, acc)
+
+print(my_measures)
+```
+
+## Algorithm selection
+
+There are a number of different machine learning algorithms that can be used to train a model. In mlr these are called "learners". Here is a list of all the different learners supported by default in mlr for classification tasks.
+
+```{r model_types}
+as.data.frame(listLearners("classif", quiet = TRUE, warn.missing.packages = FALSE)) %>%
+  select(class, name)
+```
+
+As you can see, the list is quite extensive and it would take a *very long time* to include all of them. We will choose a few general-purpose learners and see how they compare. Specifically:
+
+* *Logistic regression*: The classical statistical approach based on determining the coefficient for each feature and an intercept that minimizes the error of prediction across all observations.
+
+* *Lasso*: A special case of logistic regression which applies a penalty (called an L1 penalty) to the model based on how many features are used. Generally results in better generalization performance and uses fewer features than basic logistic regression.
+
+* *Ridge*: A special case of logistic regression which applies a penalty (called an L2 penalty) to the model based on the size of coefficients used. Does not eliminate any features as in the lasso, but shrinks the coefficients of less predictive variables so they are less noisy.
+
+* *Elastic net*: A blend of the lasso and ridge approaches, applies a penalty which consists of a blend of L1 and L2 penalties, with the specific blending proportion as a tunable parameter. With a little tuning, generally outperforms both lasso and ridge.
+
+* *Decision tree*: A non-linear statistical approach which considers all features and looks for the feature and split point which maximizes the difference between the probabilities of the target variables in each subset. It then repeats this process within each split to create a "tree" which learns to predict the outcome. Useful for nonlinear data, but extremely prone to overfitting.
+
+* *Random forest*: Creates many decision trees, each using only a subset of available features and observations, and then uses the average of the predictions of each tree to determine the outcome. Generalizes significantly better than decision trees with less overfitting.
+
+* *XGBoost*: A popular implementation of gradient boosting. This is similar to a random forest in that it creates multiple decision trees, but instead of creating them independently, each decision tree tries to correct the error from the decision tree before it. Generally gets state-of-the art performance for traditional data sets.
+
+* *Deep neural net*: Creates a multilayer nerual net which learns weights between inputs, hidden layers, and an output layer that reduce error over time. Neural nets have produced some of the most exciting advances in machine learning and AI in specialized applications such as image recognition, voice recognition, translation, etc. However, for traditional statistical problems they are often outclassed by tree-based models such as Random Forests and gradient boosting.
+
+We are going to create a learner for each of these algorithms using mlr's `makeLearner()` function. Since some of these algorithms cannot handle factor variables, we are going to apply `makeDummyFeaturesWrapper()` which will one-hot encode any data before passing it to the algorithm. Finally, we will add a `makePreprocWrapperCaret()` to all of the learners which will center and scale the data so that the mean is zero and the value is divided by the standard deviation for each feature.
+
+```{r make_learners}
+logistic <- makeLearner("classif.logreg") %>%
+  makeDummyFeaturesWrapper()
+
+lasso <- makeLearner("classif.LiblineaRL1LogReg") %>%
+  makeDummyFeaturesWrapper()
+
+ridge <- makeLearner("classif.LiblineaRL2LogReg") %>%
+  makeDummyFeaturesWrapper()
+
+elasticnet <- makeLearner("classif.glmnet") %>%
+  makeDummyFeaturesWrapper()
+
+decision_tree <- makeLearner("classif.rpart")
+
+random_forest <- makeLearner("classif.randomForest")
+
+xgb <- makeLearner("classif.xgboost") %>%
+  makeDummyFeaturesWrapper()
+
+svm <- makeLearner("classif.svm") %>%
+  makeDummyFeaturesWrapper()
+
+deep_nn <- makeLearner("classif.saeDNN") %>%
+  makeDummyFeaturesWrapper()
+
+lrns <- list(logistic = logistic, 
+             lasso = lasso, 
+             ridge = ridge, 
+             elasticnet = elasticnet, 
+             decision_tree = decision_tree, 
+             random_forest = random_forest, 
+             xgb = xgb, 
+             svm = svm, 
+             deep_nn = deep_nn)
+
+lrns <- map(lrns, ~ setPredictType(.x, "prob"))
+lrns <- map(lrns, ~ makePreprocWrapperCaret(.x, method = c("center", "scale")))
+lrns <- map2(.x = lrns,
+             .y = names(lrns),
+             ~ setLearnerId(.x, .y))
+
+```
+
+
+
+```{r baseline_performance}
+baseline_result <- try_load("RDS_files/baseline_result.RDS", save = TRUE, { 
+  benchmark(lrns, task, measures = my_measures) 
+})
+
+map(my_measures, ~ plotBMRBoxplots(baseline_result, measure = .x, pretty.names = FALSE))
+```
+
+```{r tuning_grid}
+getParamSet("classif.LiblineaRL1LogReg")
+
+params.lasso <- makeParamSet(
+  makeDiscreteParam("cost", c(0.001, 0.01, 0.1, 1, 10, 100, 1000)),
+  makeDiscreteParam("epsilon", c(0.001, 0.01, 0.1, 1, 10, 100, 1000))
+)
+
+tr.lasso <- tuneParams(learner = lrns$lasso, 
+                       task = task, 
+                       resampling = cv5, 
+                       measures = my_measures, 
+                       par.set = params.lasso,
+                       control = makeTuneControlGrid())
+
+print(tr.lasso)
+
+tr.lasso$opt.path$env$path %>%
+  ggplot(aes(x = cost, y = epsilon)) +
+  geom_raster(aes(fill = auc.test.mean)) +
+  geom_text(aes(label = signif(auc.test.mean, 3)))
+
+lrns$lasso.tuned <- setHyperPars(lrns$lasso, par.vals = tr.lasso$x) %>%
+  setLearnerId("lasso.tuned")
+
+bmr <- benchmark(list(lrns$lasso.tuned), task, measures = my_measures, resampling = cv10)
+
+all_results <- mergeBenchmarkResults(list(baseline_result, bmr))
+
+plotBMRBoxplots(all_results, pretty.names = FALSE)
+```
+
+```{r tuning_random}
+getParamSet("classif.xgboost")
+
+params.xgboost <- makeParamSet(
+  makeNumericParam("eta", lower = 0, upper = 1),
+  makeNumericParam("gamma", lower = 0, upper = 1),
+  makeIntegerParam("max_depth", lower = 1, upper = 20),
+  makeNumericParam("min_child_weight", lower = 0, upper = 100),
+  makeNumericParam("subsample", lower = 0.1, upper = 1),
+  makeNumericParam("colsample_bytree", lower = 0.1, upper = 1),
+  makeIntegerParam("nrounds", lower = 10, upper = 1000)
+)
+
+tr_xgb_rand <- try_load("RDS_files/tr_xgb_rand.RDS", save = TRUE, { 
+  tuneParams(learner = lrns$xgb,
+             task = task, 
+             resampling = cv10,
+             measures = my_measures, 
+             par.set = params.xgboost,
+             control = makeTuneControlRandom())
+})
+
+lrns$xgb.tuned.rand <- setHyperPars(lrns$xgb, par.vals = tr_xgb_rand$x) %>%
+  setLearnerId("xgb tuned random")
+
+bmr <- benchmark(list(lrns$xgb.tuned.rand), task, measures = my_measures, resampling = cv10)
+
+all_results <- mergeBenchmarkResults(list(all_results, bmr))
+
+plotBMRBoxplots(all_results, pretty.names = FALSE)
+```
+
+```{r plot_tune_result}
+plot_pd <- function(var, tune_result) {
+  tune_result$opt.path$env$path %>%
+    gather(metric, value, auc.test.mean, acc.test.mean, f1.test.mean, logloss.test.mean) %>%
+    ggplot(aes_string(x = var, y = "value")) +
+    geom_point() +
+    geom_smooth() +
+    geom_vline(xintercept = tune_result$x[[var]]) +
+    facet_wrap(~ metric, scales = "free")
+}
+
+map(names(params.xgboost$pars), ~ plot_pd(.x, tr_xgb_rand))
+```
+
+```{r tuning_mbo}
+mboc <- makeMBOControl(final.method = "best.predicted")
+
+tr_xgb_mbo <- try_load("RDS_files/tr_xgb_mbo.RDS", save = TRUE, { 
+ tuneParams(learner = lrns$xgb, 
+            task = task,
+            resampling = cv10,
+            measures = my_measures,
+            par.set = params.xgboost,
+            control = makeTuneControlMBO(budget = 50, mbo.control = mboc))
+})
+
+lrns$xgb.tuned.mbo <- setHyperPars(lrns$xgb, par.vals = tr_xgb_mbo$x) %>%
+  setLearnerId("xgb tuned MBO")
+
+bmr <- benchmark(list(lrns$xgb.tuned.mbo), task, measures = my_measures, resampling = cv10)
+
+all_results <- mergeBenchmarkResults(list(all_results, bmr))
+
+plotBMRBoxplots(all_results, pretty.names = FALSE)
+```
+
+```{r mbo_plot}
+map(names(params.xgboost$pars), ~ plot_pd(.x, tr_xgb_mbo))
+```
+
+```{r select_features}
+feature_set <- list()
+
+feature_set$random <- try_load("RDS_files/fs_random.RDS", save = TRUE, {
+  selectFeatures(lrns$xgb.tuned.mbo, task, cv5, auc,
+                 control = makeFeatSelControlRandom(maxit = 50))
+})
+
+feature_set$backward <- try_load("RDS_files/fs_backward.RDS", save = TRUE, {
+  selectFeatures(lrns$xgb.tuned.mbo, task, cv5, auc,
+                 control = makeFeatSelControlSequential(method = "sfbs", maxit = 50))
+})
+
+feature_set$genetic <- try_load("RDS_files/fs_genetic.RDS", save = TRUE, {
+  selectFeatures(lrns$xgb.tuned.mbo, task, cv5, auc,
+                 control = makeFeatSelControlGA(maxit = 50))
+})
+
+plot_feature_selection <- function(fs) {
+  fs$opt.path$env$path %>%
+    mutate(one = 1,
+           step = cumsum(one)) %>%
+    ggplot(aes(x = step, y = auc.test.mean)) +
+    geom_point() +
+    geom_smooth()
+}
+
+map(feature_set, plot_feature_selection)
+```
+
+```{r compare_featsel_performance}
+setTaskId <- function(task, id) {
+  task$task.desc$id <- id
+  task
+}
+
+task.fs_random <- task %>%
+  subsetTask(features = feature_set$random$x) %>%
+  setTaskId("german.fs_random")
+
+task.fs_backward <- task %>%
+  subsetTask(features = feature_set$backward$x) %>%
+  setTaskId("german.fs_backward")
+
+task.fs_genetic <- task %>%
+  subsetTask(features = feature_set$genetic$x) %>%
+  setTaskId("german.fs_genetic")
+
+
+fs_bmr <- try_load("RDS_files/fs_bmr.RDS", save = TRUE, {
+  benchmark(learners = lrns$xgb.tuned.mbo, 
+                    tasks = list(task, task.fs_random, task.fs_backward, task.fs_genetic),
+                    resamplings = cv10,
+                    measures = my_measures)
+})
+
+plotBMRBoxplots(fs_bmr, pretty.names = FALSE) +
+  facet_grid(~task.id)
+```
+
+```{r build_ensemble}
+ensemble1 <- makeStackedLearner(base.learners = lrns,
+                               predict.type = "prob",
+                               method = "hill.climb") %>%
+  setLearnerId("stack_hill.climb")
+
+ensemble2 <- makeStackedLearner(base.learners = lrns,
+                               predict.type = "prob",
+                               method = "average") %>%
+  setLearnerId("stack_average")
+
+ensemble3 <- makeStackedLearner(base.learners = lrns,
+                               super.learner = "classif.logreg",
+                               predict.type = "prob",
+                               method = "stack.nocv") %>%
+  setLearnerId("stack_logreg.nocv")
+
+ensemble4 <- makeStackedLearner(base.learners = lrns,
+                               super.learner = "classif.logreg",
+                               predict.type = "prob",
+                               method = "stack.cv",
+                               resampling = cv5) %>%
+  setLearnerId("stack_logreg.cv5")
+
+ensemble5 <- makeStackedLearner(base.learners = lrns,
+                               super.learner = "classif.LiblineaRL1LogReg",
+                               predict.type = "prob",
+                               method = "stack.nocv") %>%
+  setLearnerId("stack_lasso.nocv")
+
+ensemble6 <- makeStackedLearner(base.learners = lrns,
+                               super.learner = "classif.LiblineaRL1LogReg",
+                               predict.type = "prob",
+                               method = "stack.cv",
+                               resampling = cv5) %>%
+  setLearnerId("stack_lasso.cv5")
+
+parallelMap::parallelStartSocket(cpus = 8, level = "mlr.benchmark")
+
+stack_results <- try_load("RDS_files/stack_results.RDS", save = TRUE, {
+  benchmark(list(ensemble1, ensemble2, ensemble3, ensemble4, ensemble5, ensemble6), 
+            task, cv10, list(auc, acc, f1, logloss))
+})
+
+parallelMap::parallelStop()
+
+final_result <- mergeBenchmarkResults(list(all_results, stack_results))
+
+print(final_result)
+
+plotBMRBoxplots(final_result, pretty.names = FALSE) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+tvp <- generateThreshVsPerfData(final_result, list(fpr, tpr))
+plotROCCurves(tvp, list(fpr, tpr), facet.learner = TRUE)
+```
+
+```{r train_final_model}
+final_model <- train(ensemble6, task)
+
+pdd_numerics <- generatePartialDependenceData(final_model,
+                                              task,
+                                              features = names(task$env$data)[sapply(task$env$data, class) != "factor"])
+
+pdd_factors <- generatePartialDependenceData(final_model,
+                                             task,
+                                             features = setdiff(names(task$env$data)[sapply(task$env$data, class) == "factor"], "Performance"))
+
+pdd_numerics$data %>%
+  gather(metric, value, -Good) %>%
+  filter(!is.na(value)) %>%
+  ggplot(aes(x = value, y = Good)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~ metric, scales = "free_x") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+pdd_factors$data %>%
+  gather(metric, value, -Good) %>%
+  filter(!is.na(value)) %>%
+  mutate(value = fct_reorder(.f = value, .x = -Good, desc = TRUE)) %>%
+  ggplot(aes(x = value, y = Good)) +
+  geom_line(aes(group = 1)) +
+  geom_point() +
+  facet_grid(~ metric, scales = "free_x") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 6))
+
+pdd2 <- generatePartialDependenceData(final_model, 
+                                      task,
+                                      features = c("Credit_amount", "Duration_months"),
+                                      interaction = TRUE)
+
+pdd2$data %>%
+  ggplot(aes(x = Credit_amount, y = Duration_months)) +
+  geom_tile(aes(fill = Good)) +
+  scale_fill_gradient2(low = "red", mid = "gray", high = "forest green", midpoint = 0.6)
+```
